@@ -34,7 +34,6 @@ impl Parser {
                 stmts.push(self.def_bind()?);
             }
         }
-
         Ok(stmts)
     }
 
