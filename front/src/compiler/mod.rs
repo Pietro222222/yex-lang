@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use vm::{
-    gc::GcRef, stackvec, Bytecode, Either, EnvTable, Fun, List, OpCode, OpCodeMetadata, Symbol,
-    Value, YexType,
+    gc::GcRef, stackvec, Bytecode, EnvTable, Fn, List, OpCode, OpCodeMetadata, Symbol,
+    Value, YexType, FnKind,
 };
 
 use crate::parser::ast::{BinOp, Def, Expr, ExprKind, Literal, Location, Stmt, StmtKind, VarDecl};
@@ -106,7 +106,7 @@ impl Compiler {
         self.scope_mut().opcodes[else_label].opcode = OpCode::Jmp(self.scope().opcodes.len());
     }
 
-    fn lambda_expr(&mut self, args: &[VarDecl], body: &Expr, loc: &Location) -> GcRef<Fun> {
+    fn lambda_expr(&mut self, args: &[VarDecl], body: &Expr, loc: &Location) -> GcRef<Fn> {
         // creates the lambda scope
         let mut scope = Scope {
             opcodes: Vec::new(),
@@ -130,9 +130,9 @@ impl Compiler {
         // pops the lambda scope
         let Scope { opcodes, .. } = self.scope_stack.pop().unwrap();
 
-        // convert it to a `Fun` struct
-        let func = Fun {
-            body: GcRef::new(Either::Left(opcodes)),
+        // convert it to a `Fn` struct
+        let func = Fn {
+            body: GcRef::new(FnKind::Bytecode(opcodes)),
             arity: args.len(),
             args: stackvec![],
         };
@@ -151,7 +151,7 @@ impl Compiler {
             // compiles a lambda expression
             ExprKind::Lambda { args, body } => {
                 let func = self.lambda_expr(args, body, loc);
-                self.emit_const(Value::Fun(func), loc);
+                self.emit_const(Value::Fn(func), loc);
             }
 
             ExprKind::App { callee, args } => {
@@ -333,7 +333,7 @@ impl Compiler {
         let mut table = EnvTable::new();
         for m in methods {
             let func = match &m.value.kind {
-                ExprKind::Lambda { args, body } => Value::Fun(self.lambda_expr(args, body, loc)),
+                ExprKind::Lambda { args, body } => Value::Fn(self.lambda_expr(args, body, loc)),
                 _ => unreachable!(),
             };
 

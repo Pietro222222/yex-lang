@@ -1,7 +1,7 @@
 use crate::{
     env::EnvTable,
     gc::GcRef,
-    literal::{nil, Value},
+    literal::{nil, Value, TryGet, fun::FnKind},
     panic, InterpretResult, YexType,
 };
 use std::io::Write;
@@ -72,16 +72,18 @@ fn num(args: &[Value]) -> InterpretResult<Value> {
 }
 
 fn exit(args: &[Value]) -> InterpretResult<Value> {
-    let code = match &args[0] {
-        Value::Num(n) if n.fract() == 0.0 => *n as i32,
-        other => panic!("Expected a valid int number, found {}", other)?,
-    };
-
-    std::process::exit(code);
+    let code: f64 = args[0].get()?;
+    if code.fract() != 0.0 {
+        panic!("Expected an integer, found {}", code)?;
+    }
+    std::process::exit(code as i32);
 }
 
 fn panic(args: &[Value]) -> InterpretResult<Value> {
-    panic!("{}", &args[0])
+    match &args[0] {
+        Value::Str(s) => panic!("{}", &**s),
+        other => panic!("{}", other),
+    }
 }
 
 pub fn prelude() -> EnvTable {
@@ -93,9 +95,9 @@ pub fn prelude() -> EnvTable {
         ($name: expr, $fn: expr, $arity:expr) => {
             prelude.insert(
                 $crate::Symbol::new($name),
-                Value::Fun(GcRef::new(crate::literal::fun::Fun {
+                Value::Fn(GcRef::new(crate::literal::fun::Fn {
                     arity: $arity,
-                    body: GcRef::new($crate::Either::Right(|_, it| $fn(&*it))),
+                    body: GcRef::new(FnKind::Native(|_, it| $fn(&*it))),
                     args: $crate::StackVec::new(),
                 })),
             )
@@ -104,9 +106,9 @@ pub fn prelude() -> EnvTable {
         (@vm $name: expr, $fn: expr, $arity:expr) => {
             prelude.insert(
                 $crate::Symbol::new($name),
-                Value::Fun(GcRef::new(crate::literal::Fun {
+                Value::Fn(GcRef::new(crate::literal::Fn {
                     arity: $arity,
-                    body: GcRef::new($crate::Either::Right(|vm, it| {
+                    body: GcRef::new(FnKind::Native(|vm, it| {
                         $fn(unsafe { vm.as_mut().unwrap() }, &*it)
                     })),
                     args: $crate::StackVec::new(),

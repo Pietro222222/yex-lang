@@ -3,7 +3,6 @@
 #![deny(clippy::all)]
 #![allow(clippy::unit_arg)]
 //! Virtual Machine implementation for the yex programming language
-mod either;
 mod env;
 mod error;
 #[doc(hidden)]
@@ -15,16 +14,21 @@ mod stack;
 
 use gc::GcRef;
 use literal::{
-    fun::{FunArgs, NativeFun},
+    fun::{FnArgs, NativeFn},
     yextype::instantiate,
 };
 
 use crate::error::InterpretResult;
 
 pub use crate::{
-    either::Either,
     env::EnvTable,
-    literal::{fun::Fun, list::List, symbol::Symbol, yextype::YexType, Value},
+    literal::{
+        fun::{Fn, FnKind},
+        list::List,
+        symbol::Symbol,
+        yextype::YexType,
+        Value,
+    },
     opcode::{OpCode, OpCodeMetadata},
     stack::StackVec,
 };
@@ -53,7 +57,7 @@ type Stack = StackVec<Value, STACK_SIZE>;
 pub type Bytecode = Vec<OpCodeMetadata>;
 
 type BytecodeRef<'a> = &'a Bytecode;
-use std::mem::swap;
+use std::{mem::swap, ops};
 /// Implements the Yex virtual machine, which runs the [`crate::OpCode`] instructions in a stack
 /// model
 pub struct VirtualMachine {
@@ -286,15 +290,19 @@ impl VirtualMachine {
 
         let method = match ty.fields.get(&name) {
             Some(value) => match value {
-                Value::Fun(f) => f,
+                Value::Fn(f) => f,
                 _ => unreachable!(),
             },
             None => panic!("Undefined method: {}", name)?,
         };
 
+        if method.arity != arity {
+            panic!("Expected {} arguments, found {}", method.arity, arity)?;
+        }
+
         match &*method.body {
-            Either::Left(bt) => self.call_bytecode(bt, args),
-            Either::Right(f) => self.call_native(*f, args),
+            FnKind::Bytecode(bt) => self.call_bytecode(bt, args),
+            FnKind::Native(f) => self.call_native(*f, args),
         }
     }
 
@@ -311,9 +319,9 @@ impl VirtualMachine {
         };
 
         match field {
-            Value::Fun(f) => match &*f.body {
-                Either::Left(bt) => self.call_bytecode(bt, args),
-                Either::Right(f) => self.call_native(*f, args),
+            Value::Fn(f) => match &*f.body {
+                FnKind::Bytecode(bt) => self.call_bytecode(bt, args),
+                FnKind::Native(f) => self.call_native(*f, args),
             },
             _ => unreachable!(),
         }
@@ -330,8 +338,8 @@ impl VirtualMachine {
     pub fn debug_stack(&self, _: &OpCode) {}
 
     #[inline]
-    fn call_args(&mut self, arity: usize, fun: &Fun) -> FunArgs {
-        if fun.arity == arity && fun.body.is_left() && fun.args.is_empty() {
+    fn call_args(&mut self, arity: usize, fun: &Fn) -> FnArgs {
+        if fun.arity == arity && fun.is_bytecode() && fun.args.is_empty() {
             return stackvec![];
         }
 
@@ -354,7 +362,7 @@ impl VirtualMachine {
 
     pub(crate) fn call(&mut self, arity: usize) -> InterpretResult<()> {
         let fun = match self.pop() {
-            Value::Fun(f) => f,
+            Value::Fn(f) => f,
             value => panic!("Expected a function to call, found {value}")?,
         };
 
@@ -363,7 +371,7 @@ impl VirtualMachine {
             for _ in 0..arity {
                 args.push(self.pop());
             }
-            self.push(Value::Fun(GcRef::new(fun.apply(args))));
+            self.push(Value::Fn(GcRef::new(fun.apply(args))));
             return Ok(());
         }
 
@@ -374,18 +382,18 @@ impl VirtualMachine {
         }
 
         if arity < fun.arity {
-            self.push(Value::Fun(GcRef::new(fun.apply(args))));
+            self.push(Value::Fn(GcRef::new(fun.apply(args))));
             return Ok(());
         }
 
         match &*fun.body {
-            Either::Left(bytecode) => self.call_bytecode(bytecode, args),
-            Either::Right(ptr) => self.call_native(*ptr, args),
+            FnKind::Bytecode(bytecode) => self.call_bytecode(bytecode, args),
+            FnKind::Native(ptr) => self.call_native(*ptr, args),
         }
     }
 
     #[inline]
-    fn call_bytecode(&mut self, bytecode: BytecodeRef, args: FunArgs) -> InterpretResult<()> {
+    fn call_bytecode(&mut self, bytecode: BytecodeRef, args: FnArgs) -> InterpretResult<()> {
         for arg in args {
             self.push(arg);
         }
@@ -395,7 +403,7 @@ impl VirtualMachine {
     }
 
     #[inline]
-    fn call_native(&mut self, fp: NativeFun, args: FunArgs) -> InterpretResult<()> {
+    fn call_native(&mut self, fp: NativeFn, args: FnArgs) -> InterpretResult<()> {
         let args = args.reverse().into();
         let result = fp(self, args);
         self.try_push(result)
@@ -404,23 +412,23 @@ impl VirtualMachine {
     #[inline]
     fn valid_tail_call(&mut self, arity: usize, frame: BytecodeRef) -> InterpretResult<()> {
         let fun = match self.pop() {
-            Value::Fun(fun) => fun,
+            Value::Fn(fun) => fun,
             value => panic!("Expected a function, found {value}")?,
         };
         match &*fun.body {
-            Either::Left(_) if fun.arity != arity => {
+            FnKind::Bytecode(_) if fun.arity != arity => {
                 panic!(
                     "Expected function with arity {}, found {}",
                     arity, fun.arity
                 )
             }
-            Either::Left(bytecode) if bytecode != frame => {
+            FnKind::Bytecode(bytecode) if bytecode != frame => {
                 panic!("Tried to tail call a function with a different bytecode")
             }
-            Either::Right(_) => {
+            FnKind::Native(_) => {
                 panic!("Tried to use a tail call on a non-tail callable function")
             }
-            Either::Left(_) => Ok(()),
+            FnKind::Bytecode(_) => Ok(()),
         }
     }
 
@@ -437,7 +445,7 @@ impl VirtualMachine {
     fn binop<T, F>(&mut self, f: F) -> InterpretResult<()>
     where
         T: Into<Value>,
-        F: Fn(Value, Value) -> InterpretResult<T>,
+        F: ops::Fn(Value, Value) -> InterpretResult<T>,
     {
         let a = self.pop();
         let b = self.pop();
