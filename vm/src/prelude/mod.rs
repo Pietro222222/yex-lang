@@ -1,8 +1,8 @@
 use crate::{
     env::EnvTable,
     gc::GcRef,
-    literal::{nil, Value, TryGet, fun::FnKind},
-    panic, InterpretResult, YexType,
+    literal::{fun::FnKind, nil, TryGet, Value},
+    raise, InterpretResult, List, YexType,
 };
 use std::io::Write;
 
@@ -29,12 +29,12 @@ fn input(args: &[Value]) -> InterpretResult<Value> {
     };
 
     if std::io::stdout().flush().is_err() {
-        panic!("Error flushing stdout")?;
+        raise!("Error flushing stdout")?;
     }
 
     let mut input = String::new();
     if std::io::stdin().read_line(&mut input).is_err() {
-        panic!("Error reading line")?;
+        raise!("Error reading line")?;
     }
 
     input.pop();
@@ -59,31 +59,51 @@ fn inspect(args: &[Value]) -> InterpretResult<Value> {
 
 fn num(args: &[Value]) -> InterpretResult<Value> {
     let str = match &args[0] {
-        Value::Sym(symbol) => symbol.to_str(),
+        Value::Sym(symbol) => symbol.as_str(),
         Value::Str(str) => &*str,
         n @ Value::Num(..) => return Ok(n.clone()),
-        other => panic!("Expected a string or a symbol, found {}", other)?,
+        other => raise!("Expected a string or a symbol, found {}", other)?,
     };
 
     match str.parse::<f64>() {
         Ok(n) => Ok(Value::Num(n)),
-        Err(e) => panic!("{:?}", e),
+        Err(e) => raise!("{:?}", e),
     }
 }
 
 fn exit(args: &[Value]) -> InterpretResult<Value> {
     let code: f64 = args[0].get()?;
     if code.fract() != 0.0 {
-        panic!("Expected an integer, found {}", code)?;
+        raise!("Expected an integer, found {}", code)?;
     }
     std::process::exit(code as i32);
 }
 
-fn panic(args: &[Value]) -> InterpretResult<Value> {
+fn raise(args: &[Value]) -> InterpretResult<Value> {
     match &args[0] {
-        Value::Str(s) => panic!("{}", &**s),
-        other => panic!("{}", other),
+        Value::Str(s) => raise!("{}", &**s),
+        other => raise!("{}", other),
     }
+}
+
+fn format(args: &[Value]) -> InterpretResult<Value> {
+    let format: String = args[0].get()?;
+    let args: List = args[1].get()?;
+    let mut idx = 0;
+
+    let res = format
+        .chars()
+        .map(|it| {
+            if it == '&' {
+                idx += 1;
+                format!("{}", args.index(idx))
+            } else {
+                it.to_string()
+            }
+        })
+        .collect::<String>();
+
+    Ok(Value::Str(GcRef::new(res)))
 }
 
 pub fn prelude() -> EnvTable {
@@ -131,7 +151,8 @@ pub fn prelude() -> EnvTable {
     insert_fn!("inspect", inspect);
     insert_fn!("num", num);
     insert_fn!("exit", exit);
-    insert_fn!("panic", panic);
+    insert_fn!("raise", raise);
+    insert_fn!("format", format, 2);
 
     insert!("Nil", Value::Type(GcRef::new(YexType::nil())));
     insert!("Bool", Value::Type(GcRef::new(YexType::bool())));

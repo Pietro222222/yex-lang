@@ -6,7 +6,7 @@ use crate::{
     tokens::{Token, TokenType as Tkt},
 };
 
-use self::ast::{BindType, Def, Expr, ExprKind, Literal, Location, Stmt, StmtKind, VarDecl};
+use self::ast::{Bind, BindType, Def, Expr, ExprKind, Literal, Location, Stmt, StmtKind, VarDecl};
 
 pub mod ast;
 
@@ -28,10 +28,12 @@ impl Parser {
     pub fn parse(mut self) -> ParseResult<Vec<Stmt>> {
         let mut stmts = Vec::new();
         while self.current.token != Tkt::Eof {
-            if self.current.token == Tkt::Type {
-                stmts.push(self.type_bind()?);
-            } else {
-                stmts.push(self.def_bind()?);
+            match self.current.token {
+                Tkt::Type => {
+                    stmts.push(self.type_bind()?);
+                }
+                Tkt::Def => stmts.push(self.def_bind()?),
+                _ => stmts.push(self.expr()?.into()),
             }
         }
         Ok(stmts)
@@ -74,12 +76,19 @@ impl Parser {
                 self.throw("Expected method definition")?;
             }
 
-            if def.bind.name.to_str() == "init" {
+            if def.bind.name.as_str() == "init" {
                 init = Some(def);
                 continue;
             }
 
-            methods.push(def);
+            match def.value.kind {
+                ExprKind::Lambda { ref args, .. }
+                    if !args.is_empty() && args[0].name.as_str() == "this" =>
+                {
+                    methods.push(def)
+                }
+                _ => self.throw("Methods should receive `this` as a parameter")?,
+            }
         }
         self.next()?;
 
@@ -191,7 +200,7 @@ impl Parser {
 
     fn expr(&mut self) -> ParseResult<Expr> {
         let mut expr = match self.current.token {
-            Tkt::Let => self.bind()?,
+            Tkt::Let => self.let_()?,
             Tkt::If => self.condition()?,
             Tkt::Fn => self.fn_()?,
             _ => self.logic_or()?,
@@ -296,7 +305,7 @@ impl Parser {
         Ok(VarDecl::new(name))
     }
 
-    fn bind_fn(&mut self) -> ParseResult<Expr> {
+    fn bind_fn(&mut self) -> ParseResult<Bind> {
         let line = self.current.line;
         let column = self.current.column;
 
@@ -308,22 +317,10 @@ impl Parser {
         self.next()?;
         let value = self.function()?;
 
-        self.expect(Tkt::In)?;
-        let body = self.expr()?;
-
-        Ok(Expr::new(
-            ExprKind::Bind {
-                bind: VarDecl::new(name),
-                value: Box::new(value),
-                body: Box::new(body),
-            },
-            line,
-            column,
-        ))
+        Ok(Bind::new(VarDecl::new(name), Box::new(value), line, column))
     }
 
-    fn bind(&mut self) -> ParseResult<Expr> {
-        self.expect(Tkt::Let)?;
+    fn bind(&mut self) -> ParseResult<Bind> {
         if self.peek()?.token == Tkt::Lparen {
             return self.bind_fn();
         }
@@ -336,18 +333,30 @@ impl Parser {
         self.expect(Tkt::Assign)?;
         let value = self.expr()?;
 
-        self.expect(Tkt::In)?;
-        let body = self.expr()?;
+        Ok(Bind::new(bind, Box::new(value), line, column))
+    }
 
-        Ok(Expr::new(
-            ExprKind::Bind {
-                bind,
-                value: Box::new(value),
-                body: Box::new(body),
-            },
-            line,
-            column,
-        ))
+    fn let_(&mut self) -> ParseResult<Expr> {
+        self.expect(Tkt::Let)?;
+
+        let mut binds = vec![];
+
+        while self.current.token != Tkt::In {
+            let bind = match self.peek()?.token {
+                Tkt::Lparen => self.bind_fn()?,
+                _ => self.bind()?,
+            };
+            binds.push(bind);
+        }
+
+        self.next()?;
+
+        let line = self.current.line;
+        let column = self.current.column;
+
+        let body = Box::new(self.expr()?);
+
+        Ok(Expr::new(ExprKind::Let { binds, body }, line, column))
     }
 
     fn logic_or(&mut self) -> ParseResult<Expr> {

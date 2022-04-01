@@ -119,15 +119,31 @@ impl<'a> From<UnOp> for &'a [OpCode] {
 }
 
 #[derive(Debug)]
+pub struct Bind {
+    pub bind: VarDecl,
+    pub value: Box<Expr>,
+    pub location: Location,
+}
+
+impl Bind {
+    pub fn new(bind: VarDecl, value: Box<Expr>, line: usize, column: usize) -> Self {
+        Self {
+            bind,
+            value,
+            location: Location { line, column },
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum ExprKind {
     If {
         cond: Box<Expr>,
         then: Box<Expr>,
         else_: Box<Expr>,
     },
-    Bind {
-        bind: VarDecl,
-        value: Box<Expr>,
+    Let {
+        binds: Vec<Bind>,
         body: Box<Expr>,
     },
     Lambda {
@@ -278,4 +294,14 @@ pub enum StmtKind {
         methods: Vec<Def>,
         init: Option<Def>,
     },
+    Expr(Expr),
+}
+
+impl From<Expr> for Stmt {
+    fn from(expr: Expr) -> Self {
+        Stmt {
+            location: expr.location,
+            kind: StmtKind::Expr(expr),
+        }
+    }
 }

@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use vm::{
-    gc::GcRef, stackvec, Bytecode, EnvTable, Fn, List, OpCode, OpCodeMetadata, Symbol,
-    Value, YexType, FnKind,
+    gc::GcRef, stackvec, Bytecode, EnvTable, Fn, FnKind, List, OpCode, OpCodeMetadata, Symbol,
+    Value, YexType,
 };
 
-use crate::parser::ast::{BinOp, Def, Expr, ExprKind, Literal, Location, Stmt, StmtKind, VarDecl};
+use crate::parser::ast::{
+    BinOp, Bind, Def, Expr, ExprKind, Literal, Location, Stmt, StmtKind, VarDecl,
+};
 
 #[derive(Default)]
 struct Scope {
@@ -184,13 +186,19 @@ impl Compiler {
 
             ExprKind::If { cond, then, else_ } => self.if_expr(cond, then, else_, loc),
 
-            ExprKind::Bind { bind, value, body } => {
-                // compiles the value
-                self.expr(value);
+            ExprKind::Let { binds, body } => {
+                for Bind {
+                    value,
+                    bind,
+                    location: loc,
+                } in binds
+                {
+                    // compiles the value
+                    self.expr(value);
 
-                // emits the `Save` instruction
-                self.emit_save(*bind, loc);
-
+                    // emits the `Save` instruction
+                    self.emit_save(*bind, loc);
+                }
                 // compiles the assignment body
                 self.expr(body);
             }
@@ -301,10 +309,12 @@ impl Compiler {
 
     fn stmt(&mut self, node: &Stmt) {
         match &node.kind {
+            // compiles a `def` statement into a `Savg` instruction
             StmtKind::Def(Def { bind, value, .. }) => {
                 self.expr(value);
                 self.emit_op(OpCode::Savg(bind.name), &node.location);
             }
+            // compiles a `type` declaration into YexType and save the type to a global name
             StmtKind::Type {
                 name,
                 methods,
@@ -319,6 +329,8 @@ impl Compiler {
                     &node.location,
                 );
             }
+            // compiles a expression statement
+            StmtKind::Expr(expr) => self.expr(expr),
         }
     }
 

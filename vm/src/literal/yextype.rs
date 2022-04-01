@@ -1,4 +1,4 @@
-use crate::{env::EnvTable, error::InterpretResult, gc::GcRef, Symbol, Value, VirtualMachine};
+use crate::{env::EnvTable, error::InterpretResult, gc::GcRef, Symbol, Value, VirtualMachine, raise};
 
 use super::{fun::Fn, instance::Instance, list, table};
 
@@ -39,37 +39,37 @@ impl YexType {
 
         methods.insert(
             Symbol::from("head"),
-            Value::Fn(GcRef::new(Fn::new_native(0, list::methods::head))),
+            Value::Fn(GcRef::new(Fn::new_native(1, list::methods::head))),
         );
 
         methods.insert(
             Symbol::from("tail"),
-            Value::Fn(GcRef::new(Fn::new_native(0, list::methods::tail))),
+            Value::Fn(GcRef::new(Fn::new_native(1, list::methods::tail))),
         );
 
         methods.insert(
             Symbol::from("map"),
-            Value::Fn(GcRef::new(Fn::new_native(1, list::methods::map))),
+            Value::Fn(GcRef::new(Fn::new_native(2, list::methods::map))),
         );
 
         methods.insert(
             Symbol::from("filter"),
-            Value::Fn(GcRef::new(Fn::new_native(1, list::methods::filter))),
+            Value::Fn(GcRef::new(Fn::new_native(2, list::methods::filter))),
         );
 
         methods.insert(
             Symbol::from("fold"),
-            Value::Fn(GcRef::new(Fn::new_native(2, list::methods::fold))),
+            Value::Fn(GcRef::new(Fn::new_native(3, list::methods::fold))),
         );
 
         methods.insert(
             Symbol::from("rev"),
-            Value::Fn(GcRef::new(Fn::new_native(1, list::methods::rev))),
+            Value::Fn(GcRef::new(Fn::new_native(2, list::methods::rev))),
         );
 
         methods.insert(
             Symbol::from("get"),
-            Value::Fn(GcRef::new(Fn::new_native(1, list::methods::get))),
+            Value::Fn(GcRef::new(Fn::new_native(2, list::methods::get))),
         );
 
         Self::new(Symbol::from("List"), methods, vec![])
@@ -81,11 +81,11 @@ impl YexType {
 
         methods.insert(
             Symbol::from("get"),
-            Value::Fn(GcRef::new(Fn::new_native(1, table::methods::get))),
+            Value::Fn(GcRef::new(Fn::new_native(2, table::methods::get))),
         );
         methods.insert(
             Symbol::from("insert"),
-            Value::Fn(GcRef::new(Fn::new_native(2, table::methods::insert))),
+            Value::Fn(GcRef::new(Fn::new_native(3, table::methods::insert))),
         );
         Self::new(Symbol::from("Table"), methods, vec![])
             .with_initializer(GcRef::new(Fn::new_native(1, table::methods::init)))
@@ -147,7 +147,7 @@ pub fn instantiate(
     args: Vec<Value>,
 ) -> InterpretResult<()> {
     if args.len() != ty.params.len() {
-        panic!("Wrong number of arguments for type instantiation");
+        raise!("Wrong number of arguments for type instantiation")?;
     }
 
     let mut fields = EnvTable::new();
