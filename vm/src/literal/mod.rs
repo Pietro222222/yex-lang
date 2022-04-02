@@ -10,6 +10,7 @@ pub mod list;
 pub mod symbol;
 pub mod table;
 pub mod yextype;
+pub mod str;
 use crate::{error::InterpretResult, gc::GcRef, raise};
 
 use fun::Fn;
@@ -18,7 +19,7 @@ use list::List;
 use symbol::Symbol;
 use yextype::YexType;
 
-use self::table::Table;
+use self::{table::Table};
 
 pub fn nil() -> Value {
     Value::Nil

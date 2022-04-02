@@ -1,6 +1,6 @@
 use crate::{env::EnvTable, error::InterpretResult, gc::GcRef, Symbol, Value, VirtualMachine, raise};
 
-use super::{fun::Fn, instance::Instance, list, table};
+use super::{fun::Fn, instance::Instance, list, table, str};
 
 #[derive(Debug, PartialEq)]
 /// A Yex user-defined type.
@@ -107,7 +107,20 @@ impl YexType {
 
     /// Creates a new Str type.
     pub fn str() -> Self {
-        let methods = EnvTable::new();
+        let mut methods = EnvTable::new();
+        methods.insert(
+            Symbol::from("split"),
+            Value::Fn(GcRef::new(Fn::new_native(2, str::methods::split))),
+        );
+        methods.insert(
+            Symbol::from("contains"),
+            Value::Fn(GcRef::new(Fn::new_native(2, str::methods::contains))),
+        );
+        methods.insert(
+            Symbol::from("replace"),
+            Value::Fn(GcRef::new(Fn::new_native(3, str::methods::replace))),
+        );
+
         Self::new(Symbol::from("Str"), methods, vec![]).with_initializer(GcRef::new(
             Fn::new_native(1, |_, _| Ok(Value::Str(GcRef::new(String::from(""))))),
         ))

@@ -6,6 +6,7 @@ pub fn init(_: *mut VirtualMachine, _: Vec<Value>) -> InterpretResult<Value> {
     Ok(Value::Table(Table::new()))
 }
 pub fn get(_: *mut VirtualMachine, args: Vec<Value>) -> InterpretResult<Value> {
+    println!("{:?}", args[0]);
     let table: Table = args[0].get()?;
     let key: Symbol = args[1].get()?;
     Ok(table.get(key).unwrap_or(Value::Nil))

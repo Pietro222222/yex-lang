@@ -161,7 +161,6 @@ pub fn prelude() -> EnvTable {
     insert!("List", Value::Type(GcRef::new(YexType::list())));
     insert!("Sym", Value::Type(GcRef::new(YexType::sym())));
     insert!("Fn", Value::Type(GcRef::new(YexType::fun())));
-
     insert!("Table", Value::Type(GcRef::new(YexType::table())));
     prelude
 }
