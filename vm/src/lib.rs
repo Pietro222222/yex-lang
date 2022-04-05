@@ -72,6 +72,7 @@ impl VirtualMachine {
     /// Reset the instruction pointer and the stack
     pub fn reset(&mut self) {
         self.stack = stackvec![];
+
     }
 
     /// sets the constants for execution

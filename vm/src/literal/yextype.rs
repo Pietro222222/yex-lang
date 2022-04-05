@@ -1,6 +1,6 @@
 use crate::{env::EnvTable, error::InterpretResult, gc::GcRef, Symbol, Value, VirtualMachine, raise};
 
-use super::{fun::Fn, instance::Instance, list, table, str};
+use super::{fun::Fn, instance::Instance, list, table, str, mutable::{self}};
 
 #[derive(Debug, PartialEq)]
 /// A Yex user-defined type.
@@ -149,6 +149,21 @@ impl YexType {
         let methods = EnvTable::new();
         Self::new(Symbol::from("Nil"), methods, vec![])
             .with_initializer(GcRef::new(Fn::new_native(1, |_, _| Ok(Value::Nil))))
+    }
+    ///Creates a Mutable type
+    pub fn mutable() -> Self {
+        let mut methods = EnvTable::new();
+
+        methods.insert(
+            Symbol::from("value"),
+            Value::Fn(GcRef::new(Fn::new_native(1, mutable::methods::get))),
+        );
+        methods.insert(
+            Symbol::from("set"),
+            Value::Fn(GcRef::new(Fn::new_native(2,mutable::methods::set))),
+        );
+        Self::new(Symbol::from("Mutable"), methods, vec![])
+            .with_initializer(GcRef::new(Fn::new_native(1, mutable::methods::init)))
     }
 }
 

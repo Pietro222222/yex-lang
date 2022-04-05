@@ -1,7 +1,7 @@
 use std::{
     cmp::Ordering,
     mem,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub},
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub, Deref},
 };
 
 pub mod fun;
@@ -11,6 +11,7 @@ pub mod symbol;
 pub mod table;
 pub mod yextype;
 pub mod str;
+pub mod mutable;
 use crate::{error::InterpretResult, gc::GcRef, raise};
 
 use fun::Fn;
@@ -18,6 +19,7 @@ use instance::Instance;
 use list::List;
 use symbol::Symbol;
 use yextype::YexType;
+use mutable::Mutable;
 
 use self::{table::Table};
 
@@ -50,6 +52,8 @@ pub enum Value {
     List(List),
     /// Yex user-defined types
     Type(GcRef<YexType>),
+    ///Mutable Value
+    Mutable(GcRef<Mutable>),
     /// Yex instances
     Instance(GcRef<Instance>),
     /// null
@@ -70,6 +74,7 @@ impl Clone for Value {
             Type(t) => Type(t.clone()),
             Instance(i) => Instance(i.clone()),
             Table(t) => Table(t.clone()),
+            Mutable(t) => Mutable(GcRef::clone(t)),
             Nil => Nil,
         }
     }
@@ -94,6 +99,7 @@ impl Value {
             Value::Type(t) => mem::size_of_val(&t),
             Value::Instance(i) => mem::size_of_val(&i),
             Value::Table(t) => mem::size_of_val(&t),
+            Value::Mutable(_) => mem::size_of::<Mutable>(),
             Value::Nil => 4,
         }
     }
@@ -128,6 +134,7 @@ impl Value {
             Value::Type(_) => true,
             Table(_) => true,
             Value::Instance(_) => true,
+            Mutable(_) => true, //who cares?
         }
     }
 
@@ -150,6 +157,7 @@ impl Value {
             Nil => YexType::nil(),
             Sym(_) => YexType::sym(),
             Table(_) => YexType::table(),
+            Mutable(_) => YexType::mutable(),
             Type(_) | Instance(_) => unreachable!(),
         };
 
@@ -184,6 +192,7 @@ impl std::fmt::Display for Value {
             Type(t) => format!("<type({})>", t.name),
             Instance(i) => format!("<instance({})>", i.ty.name),
             Table(t) => format!("{t}"),
+            Mutable(t) => format!("Mutable<{}>", t.get()),
             Bool(b) => b.to_string(),
         };
         write!(f, "{}", tk)
@@ -367,3 +376,4 @@ impl_get!(GcRef<Instance>: Instance);
 impl_get!(Table: Table);
 impl_get!(Symbol: Sym);
 impl_get!(List: List);
+impl_get!(Mutable: Mutable(x) => x.deref().to_owned());
